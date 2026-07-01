@@ -1,0 +1,96 @@
+name: CI - Test & Lint
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'server.py'
+      - 'tests/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'server.py'
+      - 'tests/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Run tests
+        run: |
+          python3 -m pytest tests/ -v --tb=short --color=yes
+
+      - name: Generate coverage report
+        run: |
+          python3 -m pytest tests/ --cov=. --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Check code formatting with black
+        run: |
+          python3 -m black --check --diff server.py relay.py tests/
+
+      - name: Lint with pylint
+        run: |
+          python3 -m pylint --disable=all --enable=E,F server.py relay.py
+        continue-on-error: true
+
+      - name: Type check with mypy
+        run: |
+          python3 -m mypy server.py relay.py --ignore-missing-imports
+        continue-on-error: true
+
+  security:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Security scan with bandit
+        run: |
+          python3 -m bandit -r server.py relay.py -ll
+        continue-on-error: true
+
+      - name: Check for secrets
+        run: |
+          python3 -m detect_secrets scan --all-files --force-local
+        continue-on-error: true

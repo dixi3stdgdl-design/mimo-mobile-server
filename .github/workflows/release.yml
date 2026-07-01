@@ -1,0 +1,54 @@
+name: Release - Create GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v2.0.0)'
+        required: true
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          git log $(git describe --tags --abbrev=0 HEAD^)..HEAD --oneline > CHANGELOG_LATEST.txt
+          cat CHANGELOG_LATEST.txt
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body_path: CHANGELOG_LATEST.txt
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        uses: actions/upload-artifact@v3
+        with:
+          name: mimo-server-${{ github.ref }}
+          path: |
+            server.py
+            relay.py
+            .env.example
+            Dockerfile
+            install.sh
+            README.md
+            docs/
