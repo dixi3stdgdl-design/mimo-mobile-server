@@ -8,7 +8,11 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --chown=mimo:mimo server.py ./
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY --chown=mimo:mimo config.py protocol.py state.py metrics.py http_handler.py server.py ./
+COPY --chown=mimo:mimo handlers/ handlers/
 
 USER mimo
 

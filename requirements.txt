@@ -1,0 +1,3 @@
+redis[hiredis]>=5.0
+prometheus-client>=0.20
+gunicorn[uvicorn]>=22.0
