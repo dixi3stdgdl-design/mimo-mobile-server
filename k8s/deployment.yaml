@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mimo-mobile-server
+  labels:
+    app: mimo-mobile-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mimo-mobile-server
+  template:
+    metadata:
+      labels:
+        app: mimo-mobile-server
+    spec:
+      containers:
+      - name: mimo-server
+        image: mimo-mobile-server:latest
+        ports:
+        - containerPort: 8765
+          name: websocket
+        - containerPort: 8080
+          name: http
+        env:
+        - name: MIMO_WS_PORT
+          value: "8765"
+        - name: MIMO_HTTP_PORT
+          value: "8080"
+        - name: MIMO_AUTH_PIN
+          valueFrom:
+            secretKeyRef:
+              name: mimo-secrets
+              key: auth-pin
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mimo-mobile-server
+spec:
+  selector:
+    app: mimo-mobile-server
+  ports:
+  - name: websocket
+    port: 8765
+    targetPort: 8765
+  - name: http
+    port: 8080
+    targetPort: 8080
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mimo-secrets
+type: Opaque
+stringData:
+  auth-pin: "MIMO2026"
