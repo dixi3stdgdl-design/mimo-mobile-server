@@ -16,6 +16,7 @@ services:
     volumes:
       - workspace:/workspace
       - ${MIMO_CMD_PATH:-/home/DexTer/.mimocode/bin/mimo}:/usr/local/bin/mimo:ro
+      - ${ANDROID_HOME:-/home/DexTer/Android/Sdk}/platform-tools/adb:/usr/local/bin/adb:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
