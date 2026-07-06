@@ -32,3 +32,4 @@ Thumbs.db
 
 # Instances (runtime data)
 .mimo_instances/
+.worktrees
