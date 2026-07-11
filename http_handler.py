@@ -273,26 +273,7 @@ def create_http_handler(state):
                 except Exception as e:
                     self._send_json_response(500, {"error": str(e)}, path="/api/adb/connect")
 
-            # ─── Devin AI Endpoints ────────────────────────────────
-            elif path == "/api/devin/execute":
-                if not self._check_rate_limit():
-                    return
-                task = params.get("task", [""])[0]
-                branch = params.get("branch", ["main"])[0]
-                description = params.get("description", [""])[0]
-                if not task:
-                    self._send_json_response(400, {"error": "task required"}, path="/api/devin/execute")
-                    return
-                try:
-                    result = asyncio.run(handle_devin_webhook({
-                        "action": "execute",
-                        "task": task,
-                        "params": {"branch": branch, "description": description}
-                    }))
-                    self._send_json_response(200, result, path="/api/devin/execute")
-                except Exception as e:
-                    self._send_json_response(500, {"error": str(e)}, path="/api/devin/execute")
-
+            # ─── Devin AI Endpoints (GET = read-only) ─────────────
             elif path == "/api/devin/status":
                 if not self._check_rate_limit():
                     return
@@ -315,19 +296,6 @@ def create_http_handler(state):
                     except Exception as e:
                         self._send_json_response(500, {"error": str(e)}, path="/api/devin/status")
 
-            elif path == "/api/devin/cancel":
-                if not self._check_rate_limit():
-                    return
-                session_id = params.get("session_id", [""])[0]
-                if not session_id:
-                    self._send_json_response(400, {"error": "session_id required"}, path="/api/devin/cancel")
-                    return
-                try:
-                    result = asyncio.run(cancel_session(session_id))
-                    self._send_json_response(200, {"cancelled": result}, path="/api/devin/cancel")
-                except Exception as e:
-                    self._send_json_response(500, {"error": str(e)}, path="/api/devin/cancel")
-
             # ─── Default ───────────────────────────────────────────
             else:
                 self.send_response(200)
@@ -345,7 +313,7 @@ def create_http_handler(state):
                     f"<p><a href='/api/analytics/retention'>Retention</a></p>"
                     f"<p><a href='/api/analytics/features'>Feature Usage</a></p>"
                     f"<p>ADB API: /api/adb/devices, /api/adb/exec, /api/adb/connect</p>"
-                    f"<p>Devin AI: /api/devin/execute, /api/devin/status, /api/devin/cancel</p>"
+                    f"<p>Devin AI: POST /api/devin/execute, GET /api/devin/status, POST /api/devin/cancel</p>"
                     f"</body></html>"
                 )
                 self.wfile.write(html.encode())
@@ -354,6 +322,62 @@ def create_http_handler(state):
             elapsed = (time.monotonic() - start) * 1000
             HTTP_REQUEST_DURATION.labels(method="GET", path=path).observe(elapsed / 1000)
             log_request("GET", path, 200, elapsed, ip)
+
+        def do_POST(self):
+            start = time.monotonic()
+            parsed = urlparse(self.path)
+            path = parsed.path
+            ip = self._get_client_ip()
+
+            # Read request body
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length) if content_length > 0 else b''
+
+            try:
+                data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                self._send_json_response(400, {"error": "Invalid JSON"}, path=path, method="POST")
+                return
+
+            # ─── Devin AI POST Endpoints ─────────────────────────
+            if path == "/api/devin/execute":
+                if not self._check_rate_limit():
+                    return
+                task = data.get("task", "")
+                branch = data.get("branch", "main")
+                description = data.get("description", "")
+                if not task:
+                    self._send_json_response(400, {"error": "task required in JSON body"}, path=path, method="POST")
+                    return
+                try:
+                    result = asyncio.run(handle_devin_webhook({
+                        "action": "execute",
+                        "task": task,
+                        "params": {"branch": branch, "description": description}
+                    }))
+                    self._send_json_response(200, result, path=path, method="POST")
+                except Exception as e:
+                    self._send_json_response(500, {"error": str(e)}, path=path, method="POST")
+
+            elif path == "/api/devin/cancel":
+                if not self._check_rate_limit():
+                    return
+                session_id = data.get("session_id", "")
+                if not session_id:
+                    self._send_json_response(400, {"error": "session_id required in JSON body"}, path=path, method="POST")
+                    return
+                try:
+                    result = asyncio.run(cancel_session(session_id))
+                    self._send_json_response(200, {"cancelled": result}, path=path, method="POST")
+                except Exception as e:
+                    self._send_json_response(500, {"error": str(e)}, path=path, method="POST")
+
+            else:
+                self._send_json_response(404, {"error": "Not found"}, path=path, method="POST")
+
+            elapsed = (time.monotonic() - start) * 1000
+            HTTP_REQUEST_DURATION.labels(method="POST", path=path).observe(elapsed / 1000)
+            log_request("POST", path, 200, elapsed, ip)
 
         def do_OPTIONS(self):
             self.send_response(200)
