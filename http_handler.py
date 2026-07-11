@@ -14,6 +14,7 @@ from rate_limiter import get_rate_limiter
 from cors_config import apply_cors_headers
 from logging_config import log_request
 from handlers.devin import handle_devin_webhook, get_session_status, list_sessions, cancel_session
+from handlers.webhooks import handle_webhook, handle_github_webhook, get_recent_events, get_event_by_id
 
 
 def create_http_handler(state):
@@ -273,6 +274,30 @@ def create_http_handler(state):
                 except Exception as e:
                     self._send_json_response(500, {"error": str(e)}, path="/api/adb/connect")
 
+            # ─── Webhook Events (GET = read-only) ────────────────
+            elif path == "/api/webhooks/events":
+                if not self._check_rate_limit():
+                    return
+                limit = int(params.get("limit", ["20"])[0])
+                try:
+                    events = get_recent_events(limit)
+                    self._send_json_response(200, {"events": events}, path=path)
+                except Exception as e:
+                    self._send_json_response(500, {"error": str(e)}, path=path)
+
+            elif path.startswith("/api/webhooks/events/"):
+                if not self._check_rate_limit():
+                    return
+                event_id = path.split("/")[-1]
+                try:
+                    event = get_event_by_id(event_id)
+                    if event:
+                        self._send_json_response(200, event, path=path)
+                    else:
+                        self._send_json_response(404, {"error": "Event not found"}, path=path)
+                except Exception as e:
+                    self._send_json_response(500, {"error": str(e)}, path=path)
+
             # ─── Devin AI Endpoints (GET = read-only) ─────────────
             elif path == "/api/devin/status":
                 if not self._check_rate_limit():
@@ -314,6 +339,7 @@ def create_http_handler(state):
                     f"<p><a href='/api/analytics/features'>Feature Usage</a></p>"
                     f"<p>ADB API: /api/adb/devices, /api/adb/exec, /api/adb/connect</p>"
                     f"<p>Devin AI: POST /api/devin/execute, GET /api/devin/status, POST /api/devin/cancel</p>"
+                    f"<p>Webhooks: POST /api/webhooks/devin, POST /api/webhooks/github, GET /api/webhooks/events</p>"
                     f"</body></html>"
                 )
                 self.wfile.write(html.encode())
@@ -369,6 +395,32 @@ def create_http_handler(state):
                 try:
                     result = asyncio.run(cancel_session(session_id))
                     self._send_json_response(200, {"cancelled": result}, path=path, method="POST")
+                except Exception as e:
+                    self._send_json_response(500, {"error": str(e)}, path=path, method="POST")
+
+            # ─── Webhook Receiver Endpoints ──────────────────────
+            elif path == "/api/webhooks/devin":
+                # Receive webhook from Devin AI
+                try:
+                    result = asyncio.run(handle_webhook("devin", dict(self.headers), body))
+                    self._send_json_response(200, result, path=path, method="POST")
+                except Exception as e:
+                    self._send_json_response(500, {"error": str(e)}, path=path, method="POST")
+
+            elif path == "/api/webhooks/github":
+                # Receive webhook from GitHub
+                try:
+                    result = asyncio.run(handle_github_webhook(dict(self.headers), body))
+                    self._send_json_response(200, result, path=path, method="POST")
+                except Exception as e:
+                    self._send_json_response(500, {"error": str(e)}, path=path, method="POST")
+
+            elif path.startswith("/api/webhooks/"):
+                # Generic webhook receiver
+                source = path.split("/")[-1]
+                try:
+                    result = asyncio.run(handle_webhook(source, dict(self.headers), body))
+                    self._send_json_response(200, result, path=path, method="POST")
                 except Exception as e:
                     self._send_json_response(500, {"error": str(e)}, path=path, method="POST")
 
